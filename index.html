@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Model Gateway</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, sans-serif;
+      background: #0f0f1a;
+      color: #e0e0e0;
+      padding: 30px;
+    }
+    .container { max-width: 1000px; margin: 0 auto; }
+    h1 {
+      font-size: 28px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 10px;
+    }
+    .subtitle { color: #a0aec0; margin-bottom: 30px; }
+    .status-bar {
+      background: #1a1a2e;
+      padding: 16px 20px;
+      border-radius: 10px;
+      border: 1px solid #2d3748;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+    .status-dot.running { background: #48bb78; }
+    .status-dot.stopped { background: #fc8181; }
+    .model-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+      margin: 20px 0;
+    }
+    .model-card {
+      background: #1a1a2e;
+      border: 2px solid #2d3748;
+      border-radius: 10px;
+      padding: 20px;
+      transition: all 0.3s;
+    }
+    .model-card:hover { border-color: #667eea; }
+    .model-card.selected { border-color: #48bb78; }
+    .model-card .name { font-size: 18px; font-weight: 600; }
+    .model-card .provider { color: #a0aec0; font-size: 13px; margin: 4px 0 12px; }
+    .model-card .status {
+      display: inline-block;
+      padding: 2px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    .model-card .status.configured { background: #48bb78; color: white; }
+    .model-card .status.missing { background: #fc8181; color: white; }
+    .model-card input {
+      width: 100%;
+      padding: 8px 12px;
+      background: #0f0f1a;
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      color: #e0e0e0;
+      margin: 8px 0;
+    }
+    .model-card input:focus { outline: none; border-color: #667eea; }
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.3s;
+      margin: 4px;
+    }
+    .btn-primary { background: #667eea; color: white; }
+    .btn-primary:hover { background: #764ba2; }
+    .btn-success { background: #48bb78; color: white; }
+    .btn-success:hover { background: #38a169; }
+    .btn-secondary { background: #2d3748; color: #e0e0e0; }
+    .btn-secondary:hover { background: #4a5568; }
+    .log-box {
+      background: #0d1117;
+      border-radius: 8px;
+      padding: 16px;
+      height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 13px;
+      border: 1px solid #2d3748;
+      margin-top: 20px;
+    }
+    .log-entry { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .log-info { color: #63b3ed; }
+    .log-success { color: #48bb78; }
+    .log-error { color: #fc8181; }
+    .toast {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      padding: 16px 24px;
+      border-radius: 8px;
+      color: white;
+      animation: slideUp 0.3s ease;
+      z-index: 1000;
+    }
+    .toast.success { background: #48bb78; }
+    .toast.error { background: #fc8181; }
+    @keyframes slideUp {
+      from { transform: translateY(100px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin: 20px 0;
+      background: #1a1a2e;
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid #2d3748;
+    }
+    .tab {
+      padding: 10px 24px;
+      border: none;
+      background: transparent;
+      color: #a0aec0;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.3s;
+    }
+    .tab.active { background: #667eea; color: white; }
+    .tab:hover { color: white; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0f0f1a; }
+    ::-webkit-scrollbar-thumb { background: #667eea; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🤖 Model Gateway</h1>
+    <div class="subtitle">国产模型统一管理工具</div>
+
+    <div class="status-bar">
+      <div>
+        <span class="status-dot stopped" id="statusDot"></span>
+        <span id="statusText">检查中...</span>
+      </div>
+      <div>
+        <button class="btn btn-secondary" onclick="checkServer()">🔄 刷新</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="models">🧠 模型</button>
+      <button class="tab" data-tab="logs">📝 日志</button>
+    </div>
+
+    <div class="tab-content active" id="tab-models">
+      <div id="modelGrid"></div>
+    </div>
+
+    <div class="tab-content" id="tab-logs">
+      <div class="log-box" id="logContainer"></div>
+    </div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:3000';
+    let state = { models: {}, selected: '', logs: [] };
+
+    function $(id) { return document.getElementById(id); }
+
+    async function apiGet(url) {
+      const res = await fetch(API + url);
+      if (!res.ok) throw new Error('请求失败');
+      return res.json();
+    }
+
+    async function apiPost(url, data) {
+      const res = await fetch(API + url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!res.ok) throw new Error('请求失败');
+      return res.json();
+    }
+
+    async function checkServer() {
+      try {
+        const res = await fetch(API + '/health');
+        if (res.ok) {
+          $('statusDot').className = 'status-dot running';
+          $('statusText').textContent = '✅ 服务运行中';
+          $('statusText').style.color = '#48bb78';
+          loadModels();
+          addLog('✅ 服务连接成功', 'success');
+          return true;
+        }
+      } catch (e) {
+        $('statusDot').className = 'status-dot stopped';
+        $('statusText').textContent = '❌ 服务未启动 (请运行: node server.js)';
+        $('statusText').style.color = '#fc8181';
+        $('modelGrid').innerHTML = `
+          <div style="text-align:center;padding:40px;color:#a0aec0;">
+            <div style="font-size:48px;margin-bottom:16px;">⚠️</div>
+            <p>无法连接到服务器</p>
+            <p style="font-size:13px;margin-top:8px;">请在终端运行: <code style="background:#0d1117;padding:2px 8px;border-radius:4px;">node server.js</code></p>
+          </div>
+        `;
+        addLog('❌ 无法连接到服务器', 'error');
+        return false;
+      }
+    }
+
+    async function loadModels() {
+      try {
+        const data = await apiGet('/api/models');
+        state.models = data.models;
+        state.selected = data.selected;
+        renderModels();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function renderModels() {
+      const keys = Object.keys(state.models);
+      if (!keys.length) {
+        $('modelGrid').innerHTML = '<div style="text-align:center;padding:40px;color:#a0aec0;">暂无模型</div>';
+        return;
+      }
+
+      $('modelGrid').innerHTML = `<div class="model-grid">${keys.map(key => {
+        const m = state.models[key];
+        const selected = state.selected === key;
+        const hasKey = m.apiKey && m.apiKey.length > 0;
+        const masked = hasKey ? '••••••••' + m.apiKey.slice(-4) : '';
+
+        return `
+          <div class="model-card ${selected ? 'selected' : ''}">
+            <div class="name">${m.name}</div>
+            <div class="provider">${m.provider} · ${key}</div>
+            <div class="status ${hasKey ? 'configured' : 'missing'}">
+              ${hasKey ? '✅ 已配置' : '❌ 需配置'}
+            </div>
+            <input type="password" placeholder="输入 API Key" id="key-${key}" value="${masked}"
+                   onfocus="this.value=''" onblur="if(!this.value) this.value='${masked}'">
+            <div style="margin-top:8px;">
+              <button class="btn btn-primary" onclick="saveKey('${key}')">💾 保存</button>
+              <button class="btn ${selected ? 'btn-success' : 'btn-primary'}" onclick="selectModel('${key}')">
+                ${selected ? '✅ 使用中' : '选择'}
+              </button>
+              <button class="btn btn-secondary" onclick="testModel('${key}')">🧪 测试</button>
+            </div>
+          </div>
+        `;
+      }).join('')}</div>`;
+    }
+
+    async function saveKey(key) {
+      const input = $(`key-${key}`);
+      const apiKey = input.value.trim();
+      if (!apiKey) { showToast('请输入 API Key', 'error'); return; }
+      try {
+        await apiPost(`/api/models/${key}`, { apiKey });
+        showToast('✅ 保存成功', 'success');
+        loadModels();
+      } catch (e) {
+        showToast('❌ 保存失败', 'error');
+      }
+    }
+
+    async function selectModel(key) {
+      try {
+        await apiPost('/api/select', { model: key });
+        state.selected = key;
+        renderModels();
+        showToast(`✅ 已切换到 ${state.models[key].name}`, 'success');
+        addLog(`✅ 切换到: ${state.models[key].name}`, 'success');
+      } catch (e) {
+        showToast('❌ 切换失败', 'error');
+      }
+    }
+
+    async function testModel(key) {
+      const m = state.models[key];
+      if (!m.apiKey) { showToast('❌ 请先配置 API Key', 'error'); return; }
+      addLog(`🧪 测试 ${m.name}...`, 'info');
+      try {
+        const res = await fetch(API + '/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: key,
+            messages: [{ role: 'user', content: '你好' }]
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          addLog(`✅ 测试成功: ${data.choices?.[0]?.message?.content?.slice(0, 50)}...`, 'success');
+          showToast('✅ 测试成功', 'success');
+        } else {
+          addLog(`❌ 测试失败: ${data.error?.message}`, 'error');
+          showToast('❌ 测试失败', 'error');
+        }
+      } catch (e) {
+        addLog(`❌ 测试失败: ${e.message}`, 'error');
+        showToast('❌ 测试失败', 'error');
+      }
+    }
+
+    function addLog(msg, type = 'info') {
+      const time = new Date().toLocaleTimeString();
+      const el = document.createElement('div');
+      el.className = `log-entry log-${type}`;
+      el.textContent = `[${time}] ${msg}`;
+      $('logContainer').appendChild(el);
+      $('logContainer').scrollTop = $('logContainer').scrollHeight;
+      state.logs.push({ time, msg, type });
+    }
+
+    function showToast(msg, type = 'info') {
+      const old = document.querySelector('.toast');
+      if (old) old.remove();
+      const t = document.createElement('div');
+      t.className = `toast ${type}`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3000);
+    }
+
+    // Tabs
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.onclick = function() {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        this.classList.add('active');
+        $(`tab-${this.dataset.tab}`).classList.add('active');
+      };
+    });
+
+    // Init
+    addLog('🚀 应用已启动', 'info');
+    addLog('💡 请先运行: node server.js', 'info');
+    checkServer();
+    setInterval(checkServer, 30000);
+
+    // Expose
+    window.saveKey = saveKey;
+    window.selectModel = selectModel;
+    window.testModel = testModel;
+    window.checkServer = checkServer;
+    window.showToast = showToast;
+    window.loadModels = loadModels;
+  </script>
+</body>
+</html>
